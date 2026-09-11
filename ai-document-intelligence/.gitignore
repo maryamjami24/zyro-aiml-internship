@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+temp_document.pdf
+temp_image.png
+.venv/
