@@ -4,6 +4,20 @@ from pathlib import Path
 import joblib
 import streamlit as st
 
+from database import (
+    initialize_database,
+    add_document,
+    get_document_by_hash,
+    get_document,
+    filter_documents,
+)
+
+from storage_manager import (
+    initialize_storage,
+    calculate_file_hash,
+    save_file,
+)
+
 from document_processor import (
     extract_text_from_pdf,
     extract_text_from_pdf_with_method,
@@ -1050,6 +1064,118 @@ def process_document(uploaded_file):
                 cleaned_text
             )
 
+        # ----------------------------------------------------
+        # Final document type
+        # ----------------------------------------------------
+
+        # ------------------------------------------------
+        # Final document type
+        # ------------------------------------------------
+        # Use the ML prediction when it agrees with the
+        # rule-based classifier.
+        #
+        # If ML and rule-based classification disagree,
+        # prefer the rule-based result. This prevents
+        # unrelated documents from being incorrectly
+        # stored as invoices or resumes.
+
+        if (
+            ml_type in [
+                "Invoice",
+                "Resume"
+            ]
+            and ml_type == rule_type
+        ):
+
+            document_type = ml_type
+
+        elif rule_type in [
+            "Invoice",
+            "Resume"
+        ]:
+
+            document_type = rule_type
+
+        else:
+
+            document_type = "Other"
+
+        # ----------------------------------------------------
+        # Processing status
+        # ----------------------------------------------------
+
+        status = "Processed"
+        def is_missing_field(value):
+            if value is None:
+                return True
+
+            value = str(value).strip().lower()
+
+            return value in [
+                "",
+                "not found",
+                "not_found",
+                "n/a",
+                "none",
+                "null",
+                "missing"
+            ]
+
+        if document_type == "Invoice":
+
+            if invoice_fields is None:
+                status = "Needs Review"
+
+            else:
+
+                missing_invoice_fields = []
+
+                for field_name in [
+                    "Invoice Number",
+                    "Date",
+                    "Company Name",
+                    "Total Amount"
+                ]:
+
+                    value = invoice_fields.get(
+                        field_name
+                    )
+
+                    if is_missing_field(value):
+                        missing_invoice_fields.append(
+                            field_name
+                        )
+
+                if missing_invoice_fields:
+                    status = "Needs Review"
+
+        elif document_type == "Resume":
+
+            if resume_fields is None:
+                status = "Needs Review"
+
+            else:
+
+                missing_resume_fields = []
+
+                for field_name in [
+                    "Name",
+                    "Email",
+                    "Phone"
+                ]:
+
+                    value = resume_fields.get(
+                        field_name
+                    )
+
+                    if is_missing_field(value):
+                        missing_resume_fields.append(
+                            field_name
+                        )
+
+                if missing_resume_fields:
+                    status = "Needs Review"
+
         return {
             "success": True,
             "file_name": file_name,
@@ -1058,15 +1184,20 @@ def process_document(uploaded_file):
             "ml_type": ml_type,
             "ml_confidence": ml_confidence,
             "rule_type": rule_type,
+            "document_type": document_type,
             "invoice_fields": invoice_fields,
-            "resume_fields": resume_fields
+            "resume_fields": resume_fields,
+            "status": status
         }
 
-    except Exception as e:
+    except Exception:
 
         return {
             "success": False,
-            "error": f"Error processing document: {e}"
+            "error": (
+                "The document could not be processed. "
+                "Please check the file and try again."
+            )
         }
 
     finally:
@@ -1084,204 +1215,737 @@ def process_document(uploaded_file):
 # STREAMLIT USER INTERFACE
 # ============================================================
 
-st.title("📄 AI Document Intelligence")
+initialize_database()
+initialize_storage()
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
+SUPPORTED_EXTENSIONS = [
+    "pdf",
+    "jpg",
+    "jpeg",
+    "png",
+]
+
+
+st.title("AI Document Intelligence")
 
 st.write(
-    "Upload an invoice, resume, or document to extract "
-    "text, identify its type, and find important information."
+    "Upload, organize, search, and manage invoices, resumes, "
+    "and other documents."
 )
 
 
 # ============================================================
-# FILE UPLOADER
+# SIDEBAR
 # ============================================================
 
-uploaded_file = st.file_uploader(
-    "Upload a document",
-    type=[
-        "pdf",
-        "jpg",
-        "jpeg",
-        "png"
-    ]
+st.sidebar.header("Document Management")
+
+page = st.sidebar.radio(
+    "Select Section",
+    [
+        "Upload Document",
+        "Document Repository",
+    ],
 )
 
 
 # ============================================================
-# PROCESS UPLOADED FILE
+# UPLOAD DOCUMENT
 # ============================================================
 
-if uploaded_file is not None:
+if page == "Upload Document":
 
-    result = process_document(
-        uploaded_file
+    st.header("Upload Document")
+
+    uploaded_file = st.file_uploader(
+        "Upload a document",
+        type=SUPPORTED_EXTENSIONS,
     )
 
-    if not result["success"]:
+    if uploaded_file is not None:
 
-        st.error(
-            result["error"]
-        )
+        file_bytes = uploaded_file.getvalue()
 
-    else:
+        # ----------------------------------------------------
+        # File size validation
+        # ----------------------------------------------------
 
-        # ====================================================
-        # DOCUMENT ANALYSIS
-        # ====================================================
+        if len(file_bytes) > MAX_FILE_SIZE:
 
-        st.header("📊 Document Analysis")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-
-            st.metric(
-                "ML Document Type",
-                result["ml_type"]
+            st.error(
+                "File is too large. Maximum allowed size is 10 MB."
             )
 
-        with col2:
+        else:
 
-            confidence = result[
-                "ml_confidence"
-            ]
+            file_hash = calculate_file_hash(
+                file_bytes
+            )
 
-            if confidence > 0:
+            # ------------------------------------------------
+            # Duplicate detection
+            # ------------------------------------------------
 
-                st.metric(
-                    "ML Confidence",
-                    f"{confidence:.1f}%"
+            existing_document = get_document_by_hash(
+                file_hash
+            )
+
+            if existing_document is not None:
+
+                st.warning(
+                    "Duplicate document detected. "
+                    "This file already exists in the repository."
+                )
+
+                st.subheader("Existing Document")
+
+                st.write(
+                    "**Original filename:**",
+                    existing_document["original_filename"]
+                )
+
+                st.write(
+                    "**Document type:**",
+                    existing_document["document_type"]
+                )
+
+                st.write(
+                    "**Upload date:**",
+                    existing_document["upload_date"]
+                )
+
+                st.write(
+                    "**Status:**",
+                    existing_document["status"]
+                )
+
+                st.write(
+                    "**Stored file:**",
+                    existing_document["file_path"]
+                )
+
+                st.info(
+                    "No new database record or file was created."
                 )
 
             else:
 
-                st.metric(
-                    "ML Confidence",
-                    "Not Available"
+                result = process_document(
+                    uploaded_file
                 )
 
-        with col3:
+                if not result["success"]:
 
-            st.metric(
-                "Rule-Based Type",
-                result["rule_type"]
-            )
+                    st.error(
+                        result["error"]
+                    )
 
-        # ====================================================
-        # INVOICE INFORMATION
-        # ====================================================
+                else:
 
-        if result["invoice_fields"] is not None:
+                    # ----------------------------------------
+                    # Save file after successful processing
+                    # ----------------------------------------
 
-            st.header(
-                "🧾 Invoice Information"
-            )
+                    stored_filename, file_path = save_file(
+                        file_bytes,
+                        result["file_name"],
+                        result["document_type"],
+                    )
 
-            invoice_fields = result[
-                "invoice_fields"
-            ]
+                    relative_file_path = file_path.relative_to(
+                        Path(__file__).resolve().parent
+                    )
 
-            col1, col2 = st.columns(2)
+                    # ----------------------------------------
+                    # Extract metadata
+                    # ----------------------------------------
 
-            with col1:
+                    company = None
+                    invoice_number = None
+                    total_amount = None
+
+                    if result["invoice_fields"] is not None:
+
+                        company = result[
+                            "invoice_fields"
+                        ].get(
+                            "Company Name"
+                        )
+
+                        invoice_number = result[
+                            "invoice_fields"
+                        ].get(
+                            "Invoice Number"
+                        )
+
+                        total_amount = result[
+                            "invoice_fields"
+                        ].get(
+                            "Total Amount"
+                        )
+
+                    # ----------------------------------------
+                    # Add repository record
+                    # ----------------------------------------
+
+                    try:
+
+                        document_id = add_document(
+                            original_filename=result[
+                                "file_name"
+                            ],
+                            stored_filename=stored_filename,
+                            document_type=result[
+                                "document_type"
+                            ],
+                            company=company,
+                            invoice_number=invoice_number,
+                            total_amount=total_amount,
+                            file_path=str(
+                                relative_file_path
+                            ),
+                            text_preview=result[
+                                "cleaned_text"
+                            ][:500],
+                            file_hash=file_hash,
+                            status=result[
+                                "status"
+                            ],
+                        )
+
+                        st.success(
+                            "Document processed and saved successfully."
+                        )
+
+                    except Exception:
+
+                        try:
+
+                            if file_path.exists():
+                                file_path.unlink()
+
+                        except Exception:
+                            pass
+
+                        st.error(
+                            "The document could not be saved "
+                            "to the repository."
+                        )
+
+                        document_id = None
+
+                    # ----------------------------------------
+                    # Document analysis
+                    # ----------------------------------------
+
+                    st.header("Document Analysis")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+
+                        st.metric(
+                            "ML Document Type",
+                            result["ml_type"]
+                        )
+
+                    with col2:
+
+                        confidence = result[
+                            "ml_confidence"
+                        ]
+
+                        if confidence > 0:
+
+                            st.metric(
+                                "ML Confidence",
+                                f"{confidence:.1f}%"
+                            )
+
+                        else:
+
+                            st.metric(
+                                "ML Confidence",
+                                "Not Available"
+                            )
+
+                    with col3:
+
+                        st.metric(
+                            "Rule-Based Type",
+                            result["rule_type"]
+                        )
+
+                    # ----------------------------------------
+                    # Status
+                    # ----------------------------------------
+
+                    st.subheader("Processing Status")
+
+                    if result["status"] == "Processed":
+
+                        st.success(
+                            "Processed"
+                        )
+
+                    else:
+
+                        st.warning(
+                            "Needs Review"
+                        )
+
+                    # ----------------------------------------
+                    # Invoice information
+                    # ----------------------------------------
+
+                    if result["invoice_fields"] is not None:
+
+                        st.header(
+                            "Invoice Information"
+                        )
+
+                        invoice_fields = result[
+                            "invoice_fields"
+                        ]
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+
+                            st.write(
+                                "**Invoice Number:**",
+                                invoice_fields[
+                                    "Invoice Number"
+                                ]
+                            )
+
+                            st.write(
+                                "**Date:**",
+                                invoice_fields[
+                                    "Date"
+                                ]
+                            )
+
+                        with col2:
+
+                            st.write(
+                                "**Company Name:**",
+                                invoice_fields[
+                                    "Company Name"
+                                ]
+                            )
+
+                            st.write(
+                                "**Total Amount:**",
+                                invoice_fields[
+                                    "Total Amount"
+                                ]
+                            )
+
+                    # ----------------------------------------
+                    # Resume information
+                    # ----------------------------------------
+
+                    if result["resume_fields"] is not None:
+
+                        st.header(
+                            "Resume Information"
+                        )
+
+                        resume_fields = result[
+                            "resume_fields"
+                        ]
+
+                        st.write(
+                            "**Name:**",
+                            resume_fields["Name"]
+                        )
+
+                        st.write(
+                            "**Email:**",
+                            resume_fields["Email"]
+                        )
+
+                        st.write(
+                            "**Phone:**",
+                            resume_fields["Phone"]
+                        )
+
+                        st.write(
+                            "**Skills:**",
+                            resume_fields["Skills"]
+                        )
+
+                    # ----------------------------------------
+                    # Processing information
+                    # ----------------------------------------
+
+                    st.header(
+                        "Processing Information"
+                    )
+
+                    st.write(
+                        "**Reading method:**",
+                        result["reading_method"]
+                    )
+
+                    st.write(
+                        "**Original file:**",
+                        result["file_name"]
+                    )
+
+                    st.write(
+                        "**Stored file:**",
+                        str(relative_file_path)
+                    )
+
+                    st.write(
+                        "**Document type:**",
+                        result["document_type"]
+                    )
+
+                    st.write(
+                        "**Cleaned text length:**",
+                        f"{len(result['cleaned_text'])} characters"
+                    )
+
+                    st.write(
+                        "**SHA-256:**",
+                        file_hash
+                    )
+
+                    # ----------------------------------------
+                    # Extracted text
+                    # ----------------------------------------
+
+                    with st.expander(
+                        "View Extracted Text"
+                    ):
+
+                        st.text_area(
+                            "Cleaned Text",
+                            result["cleaned_text"],
+                            height=300,
+                        )
+
+
+# ============================================================
+# DOCUMENT REPOSITORY
+# ============================================================
+
+else:
+
+    st.header("Document Repository")
+
+    st.write(
+        "Search, filter, sort, and view saved documents."
+    )
+
+    # --------------------------------------------------------
+    # Search
+    # --------------------------------------------------------
+
+    search_term = st.text_input(
+        "Search",
+        placeholder=(
+            "Search filename, company, invoice number, "
+            "document type, or text..."
+        ),
+    )
+
+    # --------------------------------------------------------
+    # Filters
+    # --------------------------------------------------------
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        document_type_filter = st.selectbox(
+            "Document Type",
+            [
+                "All",
+                "Invoice",
+                "Resume",
+                "Other",
+            ],
+        )
+
+    with col2:
+
+        status_filter = st.selectbox(
+            "Processing Status",
+            [
+                "All",
+                "Processed",
+                "Needs Review",
+                "Failed",
+            ],
+        )
+
+    with col3:
+
+        sort_order = st.selectbox(
+            "Sort By",
+            [
+                "Newest",
+                "Oldest",
+            ],
+        )
+
+    # --------------------------------------------------------
+    # Date filters
+    # --------------------------------------------------------
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        start_date = st.date_input(
+            "Upload Date From",
+            value=None,
+        )
+
+    with col2:
+
+        end_date = st.date_input(
+            "Upload Date To",
+            value=None,
+        )
+
+    # --------------------------------------------------------
+    # Clear filters
+    # --------------------------------------------------------
+
+    if st.button("Clear Filters"):
+
+        st.rerun()
+
+    # --------------------------------------------------------
+    # Convert date values
+    # --------------------------------------------------------
+
+    start_date_value = (
+        start_date.strftime("%Y-%m-%d")
+        if start_date is not None
+        else None
+    )
+
+    end_date_value = (
+        end_date.strftime("%Y-%m-%d")
+        if end_date is not None
+        else None
+    )
+
+    # --------------------------------------------------------
+    # Query SQLite repository
+    # --------------------------------------------------------
+
+    try:
+
+        documents = filter_documents(
+            search_term=search_term,
+            document_type=document_type_filter,
+            status=status_filter,
+            start_date=start_date_value,
+            end_date=end_date_value,
+            sort_order=sort_order,
+        )
+
+    except Exception:
+
+        documents = []
+
+        st.error(
+            "The document repository could not be loaded."
+        )
+
+    # --------------------------------------------------------
+    # Repository results
+    # --------------------------------------------------------
+
+    st.write(
+        f"Documents found: {len(documents)}"
+    )
+
+    if not documents:
+
+        st.info(
+            "No documents match the selected search and filters."
+        )
+
+    else:
+
+        for document in documents:
+
+            with st.expander(
+                f"{document['original_filename']} "
+                f"- {document['document_type']} "
+                f"- {document['status']}"
+            ):
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+
+                    st.write(
+                        "**Document ID:**",
+                        document["id"]
+                    )
+
+                    st.write(
+                        "**Original filename:**",
+                        document["original_filename"]
+                    )
+
+                    st.write(
+                        "**Document type:**",
+                        document["document_type"]
+                    )
+
+                    st.write(
+                        "**Upload date:**",
+                        document["upload_date"]
+                    )
+
+                    st.write(
+                        "**Status:**",
+                        document["status"]
+                    )
+
+                with col2:
+
+                    st.write(
+                        "**Company:**",
+                        document["company"] or "Not found"
+                    )
+
+                    st.write(
+                        "**Invoice number:**",
+                        document["invoice_number"] or "Not found"
+                    )
+
+                    st.write(
+                        "**Total amount:**",
+                        document["total_amount"] or "Not found"
+                    )
+
+                    st.write(
+                        "**File location:**",
+                        document["file_path"]
+                    )
+
+                # --------------------------------------------
+                # Text preview
+                # --------------------------------------------
+
+                st.subheader("Text Preview")
+
+                st.text(
+                    document["text_preview"]
+                    or "No text preview available."
+                )
+
+                # --------------------------------------------
+                # File access
+                # --------------------------------------------
+
+                file_path = (
+                    Path(__file__).resolve().parent
+                    / document["file_path"]
+                )
+
+                if file_path.exists():
+
+                    try:
+
+                        file_data = file_path.read_bytes()
+
+                        st.download_button(
+                            "Download / Open File",
+                            data=file_data,
+                            file_name=document[
+                                "original_filename"
+                            ],
+                            key=f"download_{document['id']}",
+                        )
+
+                        extension = file_path.suffix.lower()
+
+                        if extension in [
+                            ".jpg",
+                            ".jpeg",
+                            ".png"
+                        ]:
+
+                            st.image(
+                                file_data,
+                                caption=document[
+                                    "original_filename"
+                                ],
+                            )
+
+                    except Exception:
+
+                        st.warning(
+                            "The stored file could not be opened."
+                        )
+
+                else:
+
+                    st.warning(
+                        "The stored file is no longer available "
+                        "at the recorded location."
+                    )
+
+                # --------------------------------------------
+                # Hash
+                # --------------------------------------------
 
                 st.write(
-                    "**Invoice Number:**",
-                    invoice_fields[
-                        "Invoice Number"
-                    ]
+                    "**SHA-256:**",
+                    document["file_hash"]
                 )
 
-                st.write(
-                    "**Date:**",
-                    invoice_fields[
-                        "Date"
-                    ]
-                )
+                # --------------------------------------------
+                # Full metadata
+                # --------------------------------------------
 
-            with col2:
+                with st.expander(
+                    "View Full Metadata"
+                ):
 
-                st.write(
-                    "**Company Name:**",
-                    invoice_fields[
-                        "Company Name"
-                    ]
-                )
-
-                st.write(
-                    "**Total Amount:**",
-                    invoice_fields[
-                        "Total Amount"
-                    ]
-                )
-
-        # ====================================================
-        # RESUME INFORMATION
-        # ====================================================
-
-        if result["resume_fields"] is not None:
-
-            st.header(
-                "👤 Resume Information"
-            )
-
-            resume_fields = result[
-                "resume_fields"
-            ]
-
-            st.write(
-                "**Name:**",
-                resume_fields["Name"]
-            )
-
-            st.write(
-                "**Email:**",
-                resume_fields["Email"]
-            )
-
-            st.write(
-                "**Phone:**",
-                resume_fields["Phone"]
-            )
-
-            st.write(
-                "**Skills:**",
-                resume_fields["Skills"]
-            )
-
-        # ====================================================
-        # EXTRACTED TEXT
-        # ====================================================
-
-        st.header(
-            "📝 Extracted & Cleaned Text"
-        )
-
-        st.text_area(
-            "Document Text",
-            result["cleaned_text"],
-            height=400
-        )
-
-        # ====================================================
-        # PROCESSING INFORMATION
-        # ====================================================
-
-        st.header(
-            "⚙️ Processing Information"
-        )
-
-        st.write(
-            "**Reading method:**",
-            result["reading_method"]
-        )
-
-        st.write(
-            "**Original file:**",
-            result["file_name"]
-        )
-
-        st.write(
-            "**Cleaned text length:**",
-            f"{len(result['cleaned_text'])} characters"
-        )
+                    st.json(
+                        {
+                            "id": document["id"],
+                            "original_filename": document[
+                                "original_filename"
+                            ],
+                            "stored_filename": document[
+                                "stored_filename"
+                            ],
+                            "document_type": document[
+                                "document_type"
+                            ],
+                            "upload_date": document[
+                                "upload_date"
+                            ],
+                            "company": document[
+                                "company"
+                            ],
+                            "invoice_number": document[
+                                "invoice_number"
+                            ],
+                            "total_amount": document[
+                                "total_amount"
+                            ],
+                            "file_path": document[
+                                "file_path"
+                            ],
+                            "status": document[
+                                "status"
+                            ],
+                        }
+                    )
