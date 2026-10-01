@@ -2,7 +2,7 @@
 
 An improved Document Intelligence and Document Management application built with Python and Streamlit for the **Zyroo AI/ML Internship Program**.
 
-The application allows users to upload documents, extract and clean text, identify document types, extract important information, and store processed documents in an organized repository with SQLite metadata.
+The application allows users to upload documents, extract and clean text, identify document types, extract important information, validate extracted fields, manage workflow states, review documents, maintain an audit history, and store processed documents in an organized SQLite repository.
 
 ## Features
 
@@ -54,68 +54,336 @@ The application allows users to upload documents, extract and clean text, identi
 
 If information is missing, the application displays **Not Found** instead of failing.
 
-### Week 4 Document Management
+---
 
-The Week 4 version extends the document processor into a small document management system.
+## Week 4 Document Management
 
-* Store files in separate folders:
+The Week 4 version extended the document processor into a document management system.
 
-  * `invoices`
-  * `resumes`
-  * `other`
+### Structured File Storage
+
+Uploaded documents are stored according to their document type.
+
+```text
+storage/
+├── invoices/
+├── resumes/
+└── other/
+```
+
 * Generate safe stored filenames
 * Preserve the original filename in the database
 * Store the final file path with each document
 * Store document metadata in SQLite
-* Calculate SHA-256 file hashes
-* Detect duplicate uploads before creating a new record
-* Search documents using multiple fields
-* Filter documents by:
 
-  * Document type
-  * Processing status
-  * Upload date
-* Sort documents by newest or oldest
-* Clear repository filters
-* View saved document details
-* Display extracted metadata and text preview
-* Display processing status:
+### SQLite Document Repository
 
-  * Processed
-  * Needs Review
-  * Failed
-* Handle missing important fields using **Needs Review**
-* Reject unsupported file types
-* Limit large uploads
-* Handle processing errors without exposing raw exception details to normal users
+The repository stores information such as:
 
-## Technologies Used
+* ID
+* Original filename
+* Stored filename
+* Document type
+* Upload date
+* Company
+* Invoice number
+* Total amount
+* File path
+* Text preview
+* File hash
+* Processing status
 
-* Python
-* Streamlit
-* SQLite
-* Pandas
-* NumPy
-* scikit-learn
-* PyMuPDF
-* Tesseract OCR
-* Pytesseract
-* Pillow
-* Joblib
-* Regular Expressions (Regex)
-* hashlib
+### Duplicate Detection
+
+Every uploaded file is processed using a SHA-256 hash.
+
+Before saving a new document, the application checks whether the same hash already exists.
+
+If the file already exists:
+
+* No new database record is created
+* No new file is stored
+* Existing document information is displayed
+* The user is informed that the document is a duplicate
+
+### Search and Organization
+
+The repository supports searching across multiple document fields, including:
+
+* Filename
+* Company
+* Invoice number
+* Document type
+* Stored text preview
+
+### Filters and Sorting
+
+The repository supports:
+
+* Filter by document type
+* Filter by processing status
+* Filter by upload date
+* Sort by newest
+* Sort by oldest
+* Clear filters
+
+### Document Detail View
+
+Saved documents can be viewed from the repository.
+
+The detail view displays information such as:
+
+* Original filename
+* Stored filename
+* Document type
+* Processing status
+* Company
+* Invoice number
+* Total amount
+* File path
+* Upload date
+* Text preview
+
+---
+
+## Week 5 Advanced Document Workflow & Automation
+
+Week 5 extends the document management system with workflow automation, validation, human review, auditability, batch processing, and workflow monitoring.
+
+### Workflow State Management
+
+Documents are managed using defined workflow states:
+
+```text
+New
+Processing
+Needs Review
+Approved
+Rejected
+Completed
+```
+
+The current workflow state is stored in SQLite.
+
+Workflow transitions are controlled by the workflow logic so that invalid status changes can be prevented.
+
+### Advanced Validation
+
+The application validates important extracted fields before a document can move through the workflow.
+
+#### Invoice Validation
+
+The following fields are checked:
+
+* Invoice Number
+* Date
+* Company Name
+* Total Amount
+
+Validation includes:
+
+* Required field checks
+* Date format validation
+* Numeric amount validation
+
+#### Resume Validation
+
+The following fields are checked:
+
+* Name
+* Email
+* Skills
+* Phone when available
+
+Validation includes:
+
+* Required field checks
+* Email format validation
+* Phone format validation
+
+Validation failures identify the specific fields that failed.
+
+Documents with missing or invalid required information are sent to **Needs Review**.
+
+### Rule-Based Workflow Engine
+
+Workflow decisions are handled separately from the Streamlit interface in `workflow.py`.
+
+The workflow engine considers:
+
+* Document type
+* Validation results
+* Missing or invalid fields
+* Classification confidence when available
+
+The workflow produces:
+
+* A decision
+* A clear reason
+* Validation results
+
+The workflow rules are kept separate from the UI so they can be modified without changing the main application interface.
+
+### Confidence-Aware Review
+
+When the classifier provides a confidence value, it is stored with the document.
+
+The Week 5 workflow uses a **70% confidence threshold**.
+
+* Confidence below 70% → **Needs Review**
+* Confidence at or above 70% → allowed to continue when validation passes
+* No confidence value is invented when the classifier does not provide one
+
+Documents can therefore be sent for human review when classification confidence is low.
+
+### Human Review Queue
+
+A dedicated review queue allows users to review documents requiring attention.
+
+The review interface displays:
+
+* Filename
+* Document type
+* Current status
+* Review reason
+* Extracted fields
+* Validation results
+* Classification confidence when available
+
+Reviewers can:
+
+* Approve a document
+* Reject a document
+* Add a review note
+* Provide a rejection reason
+
+A rejection reason is required when rejecting a document.
+
+### Audit Log
+
+Workflow actions are recorded in an audit history.
+
+The audit log stores information such as:
+
+* Document ID
+* Action
+* Previous status
+* New status
+* Timestamp
+* Reason
+* Reviewer note when applicable
+
+This provides a history of important workflow changes.
+
+### Batch Workflow Processing
+
+Multiple documents can be selected and processed together using the same workflow rules.
+
+The batch workflow reports:
+
+* Processed documents
+* Documents sent to Needs Review
+* Failed documents
+* Individual results
+
+A failure for one document does not stop the processing of the remaining selected documents.
+
+Documents that are already completed can be skipped instead of being processed again.
+
+### Workflow Search and Filters
+
+The Document Repository supports workflow-related search and filtering.
+
+Users can search and filter documents using information such as:
+
+* Filename
+* Document type
+* Company
+* Invoice number
+* Workflow status
+
+Supported workflow statuses include:
+
+* Needs Review
+* Approved
+* Rejected
+* Completed
+
+The repository also displays the latest document status and workflow information.
+
+### Workflow Dashboard
+
+A workflow dashboard provides an overview of the document processing system.
+
+The dashboard displays:
+
+* Total documents
+* Processed documents
+* Needs Review count
+* Approved count
+* Rejected count
+* Completed count
+* Failed count
+* Documents by type
+* Workflow state counts
+
+This provides a quick view of the current workflow state of the document repository.
+
+---
+
+## Complete Processing Workflow
+
+The document processing and management workflow is:
+
+```text
+Upload
+   ↓
+Validate File
+   ↓
+Hash / Duplicate Check
+   ↓
+Read / OCR
+   ↓
+Clean Text
+   ↓
+Classify
+   ↓
+Extract Fields
+   ↓
+Validate Extracted Data
+   ↓
+Apply Workflow Rules
+   ↓
+Human Review if Required
+   ↓
+Store File
+   ↓
+Store Metadata
+   ↓
+Audit Workflow Actions
+   ↓
+Search / Filter
+   ↓
+View / Monitor
+```
+
+---
 
 ## Project Structure
 
 ```text
 ai-document-intelligence/
-
 │
 ├── app.py
-├── document_processor.py
-├── ocr_processor.py
 ├── database.py
 ├── storage_manager.py
+├── document_processor.py
+├── ocr_processor.py
+├── classifier.py
+├── extractor.py
+├── validator.py
+├── workflow.py
+├── audit.py
 ├── train_classifier.py
 ├── document_classifier.pkl
 ├── documents.db
@@ -125,16 +393,7 @@ ai-document-intelligence/
 │
 ├── dataset/
 │   ├── invoice/
-│   │   ├── Construction-Invoice-Template-TemplateLab.com_.pdf
-│   │   ├── Contractor-Invoice-Template-TemplateLab.com_.pdf
-│   │   ├── Proforma-Invoice-Template-TemplateLab.com_.pdf
-│   │   └── Rental-Invoice-Template-TemplateLab.com_.pdf
-│   │
 │   └── resume/
-│       ├── New-York-Resume-Template-Creative.pdf
-│       ├── Personal-trainer-resume-example-3.pdf
-│       ├── Stockholm-Resume-Template-Simple.pdf
-│       └── Ux-designer-resume-example-5.pdf
 │
 ├── storage/
 │   ├── invoices/
@@ -142,10 +401,14 @@ ai-document-intelligence/
 │   └── other/
 │
 └── screenshots/
-    ├── 07_week4_document_repository.png
-    ├── 08_week4_duplicate_detection.png
-    └── 09_week4_needs_review.png
+    ├── week5_review_queue.png
+    ├── week5_audit_history.png
+    ├── week5_batch_workflow.png
+    ├── week5_document_repository.png
+    └── week5_workflow_dashboard.png
 ```
+
+---
 
 ## Week 3 Improvements
 
@@ -221,8 +484,6 @@ These results represent performance on the small test split used for this intern
 
 The application displays **Not Found** when an important field cannot be detected.
 
-A test invoice with a missing invoice number was processed successfully.
-
 Example:
 
 ```text
@@ -245,179 +506,100 @@ Company Name: SCAN TEST COMPANY
 Total Amount: 1,000.00$
 ```
 
-## Week 4 Document Management
-
-Week 4 extends the previous document processing system into a document management layer.
-
-### Structured File Storage
-
-Uploaded documents are stored according to their document type.
-
-```text
-storage/
-├── invoices/
-├── resumes/
-└── other/
-```
-
-Safe filenames are generated for stored files instead of relying only on the original filename.
-
-The original filename is preserved in the SQLite database.
-
-### SQLite Document Repository
-
-A SQLite database is used to store document metadata.
-
-The repository keeps information such as:
-
-* ID
-* Original filename
-* Stored filename
-* Document type
-* Upload date
-* Company
-* Invoice number
-* Total amount
-* File path
-* Text preview
-* File hash
-* Processing status
-
-The database logic is kept separate from the Streamlit interface.
-
-### Duplicate Detection
-
-Every uploaded file is processed using a SHA-256 hash.
-
-Before saving a new document, the application checks whether the same hash already exists.
-
-If the file already exists:
-
-* No new database record is created
-* No new file is stored
-* The existing document information is displayed
-* The user is informed that the document is a duplicate
-
-### Search and Organization
-
-The repository provides search functionality across multiple document fields, including:
-
-* Filename
-* Company
-* Invoice number
-* Document type
-* Stored text preview
-
-SQLite queries are used to search the stored document records.
-
-### Filters and Sorting
-
-The repository supports:
-
-* Filter by document type
-* Filter by processing status
-* Filter by upload date
-* Sort by newest
-* Sort by oldest
-* Clear filters
-
-### Document Detail View
-
-Saved documents can be viewed from the repository.
-
-The detail view displays information such as:
-
-* Original filename
-* Stored filename
-* Document type
-* Processing status
-* Company
-* Invoice number
-* Total amount
-* File path
-* Upload date
-* Text preview
-
-### Processing Status
-
-Each document can have a processing status.
-
-The supported statuses are:
-
-* **Processed**
-* **Needs Review**
-* **Failed**
-
-Documents with missing important information can be marked as **Needs Review**.
-
-Processing errors can result in a **Failed** status without exposing raw exception details to normal users.
-
-## Week 4 Processing Workflow
-
-The complete Week 4 workflow is:
-
-```text
-Upload
-   ↓
-Validate
-   ↓
-Hash
-   ↓
-Read / OCR
-   ↓
-Clean
-   ↓
-Classify
-   ↓
-Extract
-   ↓
-Store File
-   ↓
-Store Metadata
-   ↓
-Search / Filter
-   ↓
-View
-```
+---
 
 ## Testing
 
-The Week 4 document management system was tested using different document types and processing scenarios.
+The application was tested using different document types and workflow scenarios.
+
+### Document Testing
 
 Testing included:
 
-* Invoice documents
+* Normal invoice documents
 * Resume documents
 * Other document types
-* Duplicate documents
 * Scanned documents
 * Documents with missing fields
-* Repository storage
-* Document search
-* Filtering and sorting
-* Processing status handling
+* Duplicate documents
+* Invalid extracted fields
+* Low classification confidence
+
+### Week 5 Workflow Testing
+
+The Week 5 workflow was tested for:
+
+* Normal invoice processing
+* Resume processing
+* Missing invoice fields
+* Invalid date values
+* Invalid email values
+* Invalid amount values
+* Low classification confidence
+* Needs Review workflow
+* Human approval
+* Human rejection
+* Rejection reason handling
+* Audit history
+* Batch processing
+* Mixed-success batch processing
+* Completed document skipping
+* Repository search and filtering
+* Workflow dashboard metrics
 
 ### Testing Evidence
 
-Week 4 screenshots are included in the `screenshots` folder.
+Week 5 screenshots are included in the `screenshots` folder.
+
+#### Human Review Queue
+
+`week5_review_queue.png`
+
+Shows the review queue with document status, extracted information, validation details, and review actions.
+
+#### Audit History
+
+`week5_audit_history.png`
+
+Shows workflow status changes with timestamps and reasons.
+
+#### Batch Workflow
+
+`week5_batch_workflow.png`
+
+Shows batch processing results and individual document outcomes.
 
 #### Document Repository
 
-`07_week4_document_repository.png`
+`week5_document_repository.png`
 
-Shows the saved documents in the document repository.
+Shows stored documents with their document types and workflow statuses.
 
-#### Duplicate Detection
+#### Workflow Dashboard
 
-`08_week4_duplicate_detection.png`
+`week5_workflow_dashboard.png`
 
-Shows that an already stored document is detected as a duplicate and no new record is created.
+Shows workflow metrics, status counts, and document counts by type.
 
-#### Needs Review
+---
 
-`09_week4_needs_review.png`
+## Technologies Used
 
-Shows a document with missing important information being marked as **Needs Review**.
+* Python
+* Streamlit
+* SQLite
+* Pandas
+* NumPy
+* scikit-learn
+* PyMuPDF
+* Tesseract OCR
+* Pytesseract
+* Pillow
+* Joblib
+* Regular Expressions (Regex)
+* hashlib
+
+---
 
 ## Limitations
 
@@ -431,7 +613,10 @@ This project is still a small Document Intelligence and Document Management syst
 * Field extraction uses regex and rule-based patterns.
 * Some fields may be displayed as Not Found.
 * ML confidence is model-based and should not be treated as guaranteed correctness.
-* The SQLite repository is intended for this internship project and small-scale document management.
+* Workflow rules are rule-based and intended for this internship project.
+* The SQLite repository is intended for small-scale document management.
+
+---
 
 ## How to Run Locally
 
@@ -467,6 +652,8 @@ streamlit run app.py
 
 The application will open in the browser.
 
+---
+
 ## SQLite Database
 
 The application creates and uses:
@@ -475,7 +662,7 @@ The application creates and uses:
 documents.db
 ```
 
-The database stores document metadata and repository information.
+The database stores document metadata, workflow states, and audit-related information.
 
 The required storage folders are also created for:
 
@@ -486,6 +673,8 @@ storage/other
 ```
 
 The database and storage system allow saved documents to remain available after restarting the Streamlit application.
+
+---
 
 ## Supported File Types
 
@@ -498,23 +687,33 @@ The application supports:
 
 Large or unsupported files are rejected with a clear user-facing message.
 
+---
+
 ## Success Criteria
 
-The Week 4 version extends the previous MVP by adding:
+The Week 5 version extends the previous document intelligence and management system with:
 
 * Organized file storage
 * SQLite document repository
-* Document metadata storage
 * SHA-256 duplicate detection
 * Multi-field search
 * Filters and sorting
 * Document detail view
-* Processing status
-* Missing-field review handling
-* Safer error handling
-* Repository testing
+* Workflow state management
+* Advanced field validation
+* Rule-based workflow engine
+* Confidence-aware review
+* Human review queue
+* Approve and reject actions
+* Audit logging
+* Batch workflow processing
+* Workflow search and filtering
+* Workflow metrics dashboard
+* Reliability and workflow testing
 * Testing screenshots
 * Updated project documentation
+
+---
 
 ## Author
 
