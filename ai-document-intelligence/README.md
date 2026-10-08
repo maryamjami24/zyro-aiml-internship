@@ -228,7 +228,7 @@ The workflow rules are kept separate from the UI so they can be modified without
 
 When the classifier provides a confidence value, it is stored with the document.
 
-The Week 5 workflow uses a **70% confidence threshold**.
+The workflow uses a **70% confidence threshold**.
 
 * Confidence below 70% → **Needs Review**
 * Confidence at or above 70% → allowed to continue when validation passes
@@ -331,6 +331,119 @@ This provides a quick view of the current workflow state of the document reposit
 
 ---
 
+## Week 6 Final Integration, Testing & Optimization
+
+Week 6 focused on final integration, reliability testing, workflow verification, persistence, optimization, security considerations, documentation, and deployment readiness.
+
+### Final Integrated Workflow
+
+The final application workflow is:
+
+```text
+Upload
+   ↓
+File Validation
+   ↓
+SHA-256 Hash / Duplicate Check
+   ↓
+PDF Text Extraction / OCR
+   ↓
+Text Cleaning
+   ↓
+Document Classification
+   ↓
+Information Extraction
+   ↓
+Field Validation
+   ↓
+Workflow Decision
+   ↓
+Needs Review / Approve / Reject / Complete
+   ↓
+Audit History
+   ↓
+Search / Filter / Dashboard
+```
+
+### Final Testing
+
+The application was tested with:
+
+* Valid invoice and resume documents
+* Documents with missing fields
+* Invalid email and phone values
+* Low-confidence classification
+* Duplicate documents
+* OCR image documents
+* Corrupted/unreadable PDF files
+* Approve workflow
+* Reject workflow with reviewer reason
+* Audit history
+* Application restart and database persistence
+* Repository search and workflow filtering
+* Mixed-success batch processing
+
+### Week 6 Test Results
+
+The final tests confirmed:
+
+* Low-confidence documents are routed to **Needs Review**
+* Invalid extracted fields are detected during validation
+* Duplicate documents are detected using SHA-256 hashing
+* OCR successfully processes image documents
+* Corrupted/unreadable documents show a user-friendly error instead of crashing
+* Approved and rejected documents maintain their workflow status
+* Reviewer actions are recorded in the audit history
+* Saved documents and workflow states remain available after application restart
+* Repository search and workflow filters return the expected documents
+* Batch processing handles multiple documents without stopping the complete batch
+* Already completed documents can be skipped during batch processing
+* Python syntax validation completed successfully for the main application modules
+
+### Mixed-Success Batch Testing
+
+A mixed batch containing documents with different processing outcomes was tested.
+
+Example results:
+
+```text
+LAB MANUAL 1 → Needs Review
+Reason: Classification confidence 56.8% is below the 70.0% threshold.
+
+missing_fields_test_resume.pdf → Needs Review
+Reason: Validation failed because Email and Phone had invalid formats.
+
+DLD LAB WORK → Skipped
+Reason: Document was already Completed.
+```
+
+The batch completed without any failed processing or application crash.
+
+### Persistence Testing
+
+The Streamlit application was stopped and restarted to verify database persistence.
+
+Previously stored documents, workflow states, approval/rejection records, and dashboard statistics remained available after restart.
+
+### Code Quality Check
+
+The following project modules were successfully checked using Python compilation:
+
+```text
+app.py
+database.py
+document_processor.py
+ocr_processor.py
+storage_manager.py
+validator.py
+workflow.py
+audit.py
+```
+
+No Python syntax errors were reported.
+
+---
+
 ## Complete Processing Workflow
 
 The document processing and management workflow is:
@@ -365,47 +478,6 @@ Audit Workflow Actions
 Search / Filter
    ↓
 View / Monitor
-```
-
----
-
-## Project Structure
-
-```text
-ai-document-intelligence/
-│
-├── app.py
-├── database.py
-├── storage_manager.py
-├── document_processor.py
-├── ocr_processor.py
-├── classifier.py
-├── extractor.py
-├── validator.py
-├── workflow.py
-├── audit.py
-├── train_classifier.py
-├── document_classifier.pkl
-├── documents.db
-├── requirements.txt
-├── README.md
-├── .gitignore
-│
-├── dataset/
-│   ├── invoice/
-│   └── resume/
-│
-├── storage/
-│   ├── invoices/
-│   ├── resumes/
-│   └── other/
-│
-└── screenshots/
-    ├── week5_review_queue.png
-    ├── week5_audit_history.png
-    ├── week5_batch_workflow.png
-    ├── week5_document_repository.png
-    └── week5_workflow_dashboard.png
 ```
 
 ---
@@ -524,10 +596,11 @@ Testing included:
 * Duplicate documents
 * Invalid extracted fields
 * Low classification confidence
+* Corrupted/unreadable documents
 
-### Week 5 Workflow Testing
+### Workflow Testing
 
-The Week 5 workflow was tested for:
+The workflow was tested for:
 
 * Normal invoice processing
 * Resume processing
@@ -546,40 +619,19 @@ The Week 5 workflow was tested for:
 * Completed document skipping
 * Repository search and filtering
 * Workflow dashboard metrics
+* Application restart persistence
 
 ### Testing Evidence
 
-Week 5 screenshots are included in the `screenshots` folder.
+Screenshots are included in the `screenshots` folder.
 
-#### Human Review Queue
+The evidence covers:
 
-`week5_review_queue.png`
-
-Shows the review queue with document status, extracted information, validation details, and review actions.
-
-#### Audit History
-
-`week5_audit_history.png`
-
-Shows workflow status changes with timestamps and reasons.
-
-#### Batch Workflow
-
-`week5_batch_workflow.png`
-
-Shows batch processing results and individual document outcomes.
-
-#### Document Repository
-
-`week5_document_repository.png`
-
-Shows stored documents with their document types and workflow statuses.
-
-#### Workflow Dashboard
-
-`week5_workflow_dashboard.png`
-
-Shows workflow metrics, status counts, and document counts by type.
+* Human Review Queue
+* Audit History
+* Batch Workflow
+* Document Repository
+* Workflow Dashboard
 
 ---
 
@@ -691,7 +743,7 @@ Large or unsupported files are rejected with a clear user-facing message.
 
 ## Success Criteria
 
-The Week 5 version extends the previous document intelligence and management system with:
+The final project includes:
 
 * Organized file storage
 * SQLite document repository
@@ -699,7 +751,9 @@ The Week 5 version extends the previous document intelligence and management sys
 * Multi-field search
 * Filters and sorting
 * Document detail view
-* Workflow state management
+* OCR and text extraction
+* Machine learning classification
+* Information extraction
 * Advanced field validation
 * Rule-based workflow engine
 * Confidence-aware review
@@ -707,11 +761,14 @@ The Week 5 version extends the previous document intelligence and management sys
 * Approve and reject actions
 * Audit logging
 * Batch workflow processing
+* Mixed-success batch handling
 * Workflow search and filtering
 * Workflow metrics dashboard
+* Database persistence after restart
+* Corrupted document handling
 * Reliability and workflow testing
-* Testing screenshots
 * Updated project documentation
+* Deployment-ready project structure
 
 ---
 
